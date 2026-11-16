@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>TinyCoder — a from-scratch inference engine for GGUF and EXL3</title>
+<meta name="description" content="TinyCoder is a from-scratch C++20/CUDA inference engine for NVIDIA GPUs. Native GGUF and EXL3 (trellis) checkpoints, its own int8 MMA GEMM, attention and gated-delta-net kernels, and an OpenAI-compatible provider through the TinyCoder OpenAI gateway. MIT licensed.">
+<link rel="icon" href="media/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="media/icon.png">
+<style>
+  :root {
+    --bg-0: #05060f;
+    --bg-1: #0a0d1e;
+    --bg-2: #11152e;
+    --panel: rgba(255, 255, 255, 0.04);
+    --panel-border: rgba(255, 255, 255, 0.09);
+    --text-0: #f2f5ff;
+    --text-1: #aeb6d4;
+    --text-2: #8b93b5;
+    --accent: #38f2d2;
+    --accent-2: #ff8a3d;
+    --blue: #5b8cff;
+    --purple: #b18cff;
+    --grad: linear-gradient(135deg, var(--accent) 0%, var(--blue) 45%, var(--purple) 100%);
+    --radius: 18px;
+    --maxw: 1120px;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color-scheme: dark;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg-0);
+    color: var(--text-0);
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: rgba(56, 242, 210, 0.28); color: #fff; }
+
+  a { color: var(--blue); }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 200;
+    background: var(--accent);
+    color: #05060f;
+    font-weight: 700;
+    padding: 10px 18px;
+    border-radius: 0 0 10px 0;
+    text-decoration: none;
+  }
+  .skip-link:focus { left: 0; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    color: #cfe4ff;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 1px 5px;
+    border-radius: 5px;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------- ambient background ---------- */
+  .bg {
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(1100px 700px at 12% -8%, rgba(56, 242, 210, 0.12), transparent 60%),
+      radial-gradient(1000px 800px at 88% -10%, rgba(91, 140, 255, 0.14), transparent 60%),
+      radial-gradient(900px 700px at 50% 115%, rgba(177, 140, 255, 0.10), transparent 60%),
+      linear-gradient(180deg, var(--bg-1), var(--bg-0) 55%);
+  }
+
+  .grid-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 52px 52px;
+    mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, #000 25%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, #000 25%, transparent 75%);
+  }
+
+  .aurora {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    filter: blur(90px);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .aurora::before,
+  .aurora::after {
+    content: "";
+    position: absolute;
+    width: 45vw;
+    height: 45vw;
+    border-radius: 50%;
+    animation: drift 22s ease-in-out infinite alternate;
+  }
+  .aurora::before {
+    left: -12vw;
+    top: 5vh;
+    background: radial-gradient(circle, rgba(56, 242, 210, 0.16), transparent 65%);
+  }
+  .aurora::after {
+    right: -14vw;
+    top: 30vh;
+    background: radial-gradient(circle, rgba(91, 140, 255, 0.18), transparent 65%);
+    animation-delay: -11s;
+  }
+  @keyframes drift {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to   { transform: translate3d(4vw, -3vh, 0) scale(1.12); }
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- navigation ---------- */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    background: rgba(5, 6, 15, 0.62);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  nav .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    height: 68px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: var(--text-0);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .brand-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    object-fit: cover;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 8px 24px rgba(56, 242, 210, 0.25);
+  }
+  .brand b { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .nav-links { display: flex; align-items: center; gap: 26px; margin-left: auto; }
+  .nav-links a {
+    color: var(--text-1);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    transition: color .2s;
+  }
+  .nav-links a:hover { color: var(--accent); }
+  nav a.gh-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: var(--text-1);
+    font-weight: 600;
+    font-size: 14px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    padding: 9px 16px;
+    border-radius: 999px;
+    transition: border-color .2s, color .2s, transform .2s, box-shadow .2s;
+  }
+  nav a.gh-link:hover {
+    color: #fff;
+    border-color: rgba(56, 242, 210, 0.55);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(56, 242, 210, 0.18);
+  }
+  nav a.gh-link svg { width: 17px; height: 17px; }
+
+  /* ---------- hero ---------- */
+  header.hero { padding: 92px 0 60px; text-align: center; }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(56, 242, 210, 0.35);
+    background: rgba(56, 242, 210, 0.08);
+    padding: 7px 16px;
+    border-radius: 999px;
+    margin-bottom: 30px;
+  }
+  .hero-badge .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+  .hero-logo-wrap {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 26px;
+  }
+  .hero-logo {
+    width: 124px;
+    height: 124px;
+    border-radius: 28px;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 30px 70px rgba(0, 0, 0, 0.55),
+      0 0 0 8px rgba(56, 242, 210, 0.06),
+      0 0 90px rgba(56, 242, 210, 0.28);
+    animation: float 6s ease-in-out infinite;
+  }
+  .hero-logo-wrap::after {
+    content: "";
+    position: absolute;
+    inset: -34px;
+    z-index: -1;
+    background: radial-gradient(circle, rgba(56, 242, 210, 0.22), transparent 68%);
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-10px); }
+  }
+
+  h1 {
+    font-size: clamp(2.3rem, 5.4vw, 3.9rem);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.07;
+    margin: 0 auto 20px;
+    max-width: 950px;
+    text-wrap: balance;
+  }
+  h1 .grad {
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .hero-sub {
+    max-width: 720px;
+    margin: 0 auto 36px;
+    font-size: clamp(1rem, 1.6vw, 1.18rem);
+    color: var(--text-1);
+  }
+  .hero-sub strong { color: var(--text-0); }
+
+  .cta-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 28px;
+    border-radius: 999px;
+    transition: transform .2s, box-shadow .2s, background .2s, border-color .2s;
+  }
+  .btn-primary {
+    background: var(--grad);
+    color: #05060f;
+    box-shadow: 0 14px 40px rgba(56, 242, 210, 0.28);
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 50px rgba(56, 242, 210, 0.4);
+  }
+  .btn-ghost {
+    color: var(--text-0);
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+  }
+  .btn-ghost:hover {
+    transform: translateY(-2px);
+    border-color: rgba(91, 140, 255, 0.55);
+    box-shadow: 0 12px 34px rgba(91, 140, 255, 0.2);
+  }
+  .btn svg { width: 18px; height: 18px; }
+
+  .hero-stats {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 48px;
+  }
+  .stat {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-1);
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    padding: 10px 18px;
+    border-radius: 12px;
+    backdrop-filter: blur(8px);
+  }
+  .stat b { color: var(--accent); font-weight: 600; }
+
+  /* ---------- sections ---------- */
+  section { padding: 72px 0; position: relative; }
+
+  .section-head { text-align: center; max-width: 760px; margin: 0 auto 44px; }
+  .section-head .kicker,
+  .kicker {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+    margin-bottom: 12px;
+  }
+  .section-head h2,
+  h2 {
+    font-size: clamp(1.8rem, 3.4vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin-bottom: 14px;
+    text-wrap: balance;
+  }
+  .section-head p { color: var(--text-1); font-size: 1.02rem; }
+
+  /* ---------- cards ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 22px;
+  }
+  .card {
+    background: linear-gradient(160deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02));
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 28px 26px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .25s, border-color .25s, box-shadow .25s;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--grad);
+    opacity: 0;
+    transition: opacity .25s;
+  }
+  .card:hover {
+    transform: translateY(-5px);
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  }
+  .card:hover::before { opacity: 1; }
+  .card .ico {
+    width: 46px; height: 46px;
+    display: grid;
+    place-items: center;
+    border-radius: 13px;
+    background: rgba(56, 242, 210, 0.1);
+    border: 1px solid rgba(56, 242, 210, 0.25);
+    color: var(--accent);
+    margin-bottom: 18px;
+    font-size: 21px;
+  }
+  .card h3 { font-size: 1.08rem; font-weight: 700; margin-bottom: 9px; letter-spacing: -0.01em; }
+  .card p { color: var(--text-1); font-size: 0.93rem; }
+  .card p + p { margin-top: 10px; }
+  .card .tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+  .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--blue);
+    background: rgba(91, 140, 255, 0.1);
+    border: 1px solid rgba(91, 140, 255, 0.22);
+    padding: 4px 10px;
+    border-radius: 7px;
+  }
+  .tag.g { color: var(--accent); border-color: rgba(56,242,210,.25); background: rgba(56,242,210,.08); }
+  .tag.p { color: var(--purple); border-color: rgba(177,140,255,.25); background: rgba(177,140,255,.08); }
+
+  /* ---------- pipeline ---------- */
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-top: 26px;
+  }
+  .pipe-step {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 16px;
+    text-align: center;
+    position: relative;
+    font-size: 0.82rem;
+    color: var(--text-1);
+  }
+  .pipe-step b { display: block; font-size: .92rem; color: var(--text-0); margin-bottom: 5px; font-family: var(--mono); }
+  .pipe-step:not(:last-child)::after {
+    content: "→";
+    position: absolute;
+    right: -13px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent);
+    font-size: 16px;
+    z-index: 2;
+  }
+  .pipe-step .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-bottom: 8px; }
+  .pipe-step .dot.g { background: var(--accent); }
+  .pipe-step .dot.b { background: var(--blue); }
+  .pipe-step .dot.p { background: var(--purple); }
+  .pipe-step .dot.o { background: var(--accent-2); }
+
+  /* ---------- EXL3 ---------- */
+  .exl3-layout {
+    display: grid;
+    grid-template-columns: 1.05fr .95fr;
+    gap: 28px;
+    align-items: start;
+  }
+  .exl3-copy h3 { font-size: 1.06rem; margin-bottom: 8px; letter-spacing: -0.01em; }
+  .exl3-copy h3 + p { margin-bottom: 20px; }
+  .exl3-copy p { color: var(--text-1); font-size: .96rem; }
+  .exl3-copy ul.checks { margin-top: 18px; }
+  .win-panel {
+    background:
+      radial-gradient(520px 320px at 85% 0%, rgba(56, 242, 210, 0.14), transparent 65%),
+      linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    border: 1px solid rgba(56, 242, 210, 0.28);
+    border-radius: 22px;
+    padding: 30px 28px;
+  }
+  .win-kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  .win-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+  .win-stat {
+    background: rgba(5, 6, 15, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 14px 12px;
+    text-align: center;
+  }
+  .win-stat .num {
+    display: block;
+    font-family: var(--mono);
+    font-size: clamp(1.5rem, 3vw, 1.95rem);
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .win-stat .unit { display: block; font-size: .76rem; color: var(--text-2); margin-top: 4px; letter-spacing: .03em; }
+  .win-vs { color: var(--text-1); font-size: .92rem; }
+  .win-vs strong { color: var(--text-0); }
+  .win-note { margin-top: 12px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08); color: var(--text-2); font-size: .84rem; }
+
+  /* ---------- code ---------- */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
+  .split h3 { font-size: 1.06rem; margin-bottom: 10px; }
+  .split > div > p { color: var(--text-1); font-size: .92rem; margin-bottom: 6px; }
+
+  .code {
+    background: #070a18;
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-top: 14px;
+  }
+  .code-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-2);
+    letter-spacing: .02em;
+  }
+  .code pre {
+    margin: 0;
+    padding: 16px 16px 18px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #d7ddff;
+    tab-size: 2;
+  }
+  .code code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
+  .code .c { color: var(--text-2); }
+  .code .k { color: var(--accent); }
+  .code .s { color: #ffc98a; }
+
+  /* ---------- tables ---------- */
+  .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+  table { width: 100%; border-collapse: collapse; }
+  table.bench { min-width: 760px; }
+  table.bench caption {
+    caption-side: top;
+    text-align: left;
+    padding: 16px 20px 4px;
+    color: var(--text-2);
+    font-size: .82rem;
+    line-height: 1.5;
+  }
+  table.bench thead th {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-1);
+    font-weight: 600;
+    font-size: .72rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--panel-border);
+    text-align: right;
+    white-space: nowrap;
+  }
+  table.bench thead th[rowspan] { text-align: left; }
+  table.bench.endpoint thead th:first-child { text-align: left; }
+  table.bench thead tr:first-child th[colspan] { text-align: center; border-bottom: 1px solid rgba(255,255,255,.05); }
+  table.bench tbody th {
+    text-align: left;
+    font-weight: 600;
+    font-size: .92rem;
+    padding: 15px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  table.bench tbody td {
+    text-align: right;
+    padding: 15px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-family: var(--mono);
+    font-size: .92rem;
+    white-space: nowrap;
+  }
+  table.bench tbody tr:last-child th,
+  table.bench tbody tr:last-child td { border-bottom: none; }
+  table.bench tr:hover td, table.bench tr:hover th { background: rgba(255, 255, 255, 0.02); }
+  table.bench .win { color: var(--accent); font-weight: 700; }
+  table.bench .base { color: var(--text-1); }
+  table.bench.endpoint { min-width: 640px; }
+  table.bench.endpoint thead th:nth-child(2),
+  table.bench.endpoint thead th:nth-child(3) { text-align: left; }
+  table.bench .method { color: var(--text-2); font-size: .8rem; letter-spacing: .04em; text-align: left; }
+  table.bench .path { font-family: var(--mono); font-size: .88rem; }
+  table.bench .desc { text-align: left; font-family: var(--sans); font-size: .9rem; white-space: normal; color: var(--text-1); }
+
+  .model-sub {
+    display: block;
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: .78rem;
+    color: var(--text-2);
+    margin-top: 3px;
+  }
+  .model-sub code { font-size: .92em; }
+
+  .table-note { color: var(--text-2); font-size: .84rem; margin-top: 14px; line-height: 1.65; }
+  .table-note + .table-note { margin-top: 8px; }
+  .table-note a { font-weight: 600; }
+
+  /* ---------- format breadth ---------- */
+  .format-card {
+    display: grid;
+    grid-template-columns: 1.25fr .75fr;
+    gap: 28px;
+    align-items: center;
+    margin-top: 38px;
+    padding: 32px;
+    border-radius: 22px;
+    border: 1px solid rgba(177, 140, 255, 0.22);
+    background:
+      radial-gradient(520px 300px at 90% 0%, rgba(177, 140, 255, 0.12), transparent 65%),
+      linear-gradient(160deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015));
+  }
+  .format-card h3 { font-size: 1.3rem; letter-spacing: -0.02em; margin-bottom: 10px; }
+  .format-card p { color: var(--text-1); font-size: .94rem; }
+  .format-card p.muted { color: var(--text-2); font-size: .88rem; margin-top: 10px; }
+  .format-stats { display: grid; gap: 12px; }
+  .fs {
+    background: rgba(5, 6, 15, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 13px;
+    padding: 13px 16px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .fs .num { font-family: var(--mono); font-size: 1.35rem; font-weight: 700; color: var(--purple); }
+  .fs .unit { font-size: .76rem; color: var(--text-2); text-align: right; }
+
+  .note {
+    margin-top: 18px;
+    padding: 16px 20px;
+    border-left: 3px solid rgba(56, 242, 210, 0.45);
+    background: rgba(56, 242, 210, 0.05);
+    border-radius: 0 12px 12px 0;
+    color: var(--text-1);
+    font-size: .9rem;
+  }
+  .note strong { color: var(--text-0); }
+
+  /* ---------- measure strip ---------- */
+  .measure { margin-top: 34px; }
+  .measure .measure-h { margin-top: 0; }
+  .measure-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+  }
+  .measure-item {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 18px;
+  }
+  .measure-item h3 { font-size: .9rem; margin-bottom: 6px; color: var(--text-0); }
+  .measure-item p { color: var(--text-2); font-size: .82rem; line-height: 1.55; }
+
+  /* ---------- API ---------- */
+  .sub-h { font-size: 1.06rem; margin: 38px 0 14px; }
+  .api-cta { justify-content: flex-start; margin-top: 24px; }
+  .api-lists { margin-top: 30px; }
+  .api-lists .card h3 { margin-bottom: 14px; }
+  ul.checks { list-style: none; display: grid; gap: 10px; }
+  ul.checks li {
+    position: relative;
+    padding-left: 26px;
+    color: var(--text-1);
+    font-size: .9rem;
+    line-height: 1.55;
+  }
+  ul.checks li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  ul.checks.no li::before { content: "—"; color: var(--accent-2); }
+
+  /* ---------- VS Code ---------- */
+  .embed-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 20px;
+    padding: 26px;
+  }
+  .ec-head { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  ol.steps { list-style: none; display: grid; gap: 14px; counter-reset: step; }
+  ol.steps li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 42px;
+    color: var(--text-1);
+    font-size: .9rem;
+    line-height: 1.55;
+  }
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: -2px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: rgba(56, 242, 210, 0.1);
+    border: 1px solid rgba(56, 242, 210, 0.25);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  ol.steps b { color: var(--text-0); }
+  .ext .kicker { margin-bottom: 12px; }
+  .ext h2 { font-size: clamp(1.6rem, 2.8vw, 2.1rem); }
+  .ext p { color: var(--text-1); font-size: .95rem; margin-bottom: 14px; }
+  .ext .btn { margin-top: 8px; }
+
+  /* ---------- CTA ---------- */
+  .cta-panel {
+    position: relative;
+    overflow: hidden;
+    border-radius: 26px;
+    border: 1px solid rgba(56, 242, 210, 0.22);
+    background:
+      radial-gradient(600px 300px at 20% 0%, rgba(56, 242, 210, 0.14), transparent 60%),
+      radial-gradient(600px 320px at 85% 100%, rgba(91, 140, 255, 0.16), transparent 60%),
+      rgba(10, 13, 30, 0.8);
+    padding: 60px 40px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+  }
+  .cta-panel h2 {
+    font-size: clamp(1.7rem, 3.2vw, 2.4rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 14px;
+  }
+  .cta-panel p { color: var(--text-1); max-width: 600px; margin: 0 auto 30px; }
+  .gh-big {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    color: #0b0d1a;
+    font-weight: 800;
+    font-size: 1rem;
+    padding: 15px 30px;
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.45);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .gh-big:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 22px 60px rgba(56,242,210,0.3); }
+  .gh-big svg { width: 21px; height: 21px; }
+
+  /* ---------- footer ---------- */
+  footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 40px 0 48px;
+    text-align: center;
+  }
+  footer .wrap { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+  footer .foot-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text-0); }
+  footer .foot-logo img { width: 26px; height: 26px; border-radius: 7px; object-fit: cover; }
+  footer p { color: var(--text-2); font-size: 0.86rem; }
+  footer .foot-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; }
+  footer a { color: var(--text-1); text-decoration: none; font-size: .86rem; }
+  footer a:hover { color: var(--accent); }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 900px) {
+    .exl3-layout { grid-template-columns: 1fr; }
+    .split { grid-template-columns: 1fr; }
+    .format-card { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+  }
+
+  @media (max-width: 640px) {
+    header.hero { padding: 60px 0 42px; }
+    section { padding: 52px 0; }
+    .hero-logo { width: 104px; height: 104px; }
+    .pipeline { grid-template-columns: 1fr; }
+    .pipe-step:not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -15px; transform: translateX(-50%); }
+    .cta-panel { padding: 44px 22px; }
+    .win-numbers { grid-template-columns: 1fr; }
+    .format-card { padding: 24px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="bg"></div>
+<div class="grid-overlay"></div>
+<div class="aurora"></div>
+
+<!-- ============ NAV ============ -->
+<nav aria-label="Primary">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <img class="brand-logo" src="media/tinycoder.jpg" alt="TinyCoder logo" width="38" height="38">
+      <span>Tiny<b>Coder</b></span>
+    </a>
+    <div class="nav-links">
+      <a href="#what">Engine</a>
+      <a href="#exl3">EXL3</a>
+      <a href="#api">API</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#vscode">VS Code</a>
+    </div>
+    <a class="gh-link" href="https://github.com/mgorshkov/tinycoder-inference" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.68.8.56A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+      <span>GitHub</span>
+    </a>
+  </div>
+</nav>
+
+<main id="main">
+
+<!-- ============ HERO ============ -->
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="hero-badge"><span class="dot"></span> C++20 / CUDA · no inference library linked</div>
+
+    <div class="hero-logo-wrap">
+      <img class="hero-logo" src="media/tinycoder.jpg" alt="TinyCoder logo" width="124" height="124" decoding="async">
+    </div>
+
+    <h1>TinyCoder — a from-scratch inference engine for <span class="grad">GGUF and EXL3</span></h1>
+
+    <p class="hero-sub">
+      Dequantisation, the int8 MMA GEMM, attention and the gated-delta-net kernels are all implemented in the tree.
+      Measured at <strong>723.0 tok/s</strong> prefill on Qwen3.8-27B EXL3, on an <strong>11 GB Turing card</strong>.
+    </p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/mgorshkov/tinycoder-inference" target="_blank" rel="noopener noreferrer">
+        Get the engine
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn btn-ghost" href="#api">
+        Run it as an API
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </a>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat">no <b>inference library</b> linked</div>
+      <div class="stat"><b>GGUF</b> + <b>EXL3</b>, both first-class</div>
+      <div class="stat"><b>34.4 GB</b> MoE on an 11 GB card</div>
+      <div class="stat"><b>sm_75</b> and newer</div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ WHAT IT IS ============ -->
+<section id="what">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">What it is</div>
+      <h2>An inference engine, not a wrapper around one</h2>
+      <p>TinyCoder is a from-scratch C++20/CUDA inference library for NVIDIA GPUs. The kernels are the product — there is no llama.cpp, ggml, Candle, PyTorch or ExLlamaV3 underneath.</p>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="ico" aria-hidden="true">⚙️</div>
+        <h3>Every kernel in the tree</h3>
+        <p>GGUF and EXL3 dequantisation, the int8 <code>mma.s8.m8n8k16</code> stream-K GEMM, warp flash attention, the gated-delta-net recurrent kernels and the samplers are implemented in this repository. No inference library is linked, embedded or called.</p>
+        <div class="tags">
+          <span class="tag g">C++20</span><span class="tag">CUDA</span><span class="tag">from scratch</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ico" aria-hidden="true">🧱</div>
+        <h3>cuBLAS is only a GEMM</h3>
+        <p>cuBLAS appears as a plain GEMM and nothing else. Prefill has two paths: cuBLAS fp16 tensor cores, and the in-tree int8 stream-K MMA that quantises activations to Q8_0 and reads GGUF blocks straight from VRAM.</p>
+        <div class="tags">
+          <span class="tag p">cuBLAS</span><span class="tag g">int8 MMA</span><span class="tag">Q8_0</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ico" aria-hidden="true">🧩</div>
+        <h3>Two first-class formats</h3>
+        <p><strong>GGUF v3</strong> — K-quants Q2_K to Q6_K, Q5_0/Q5_1/Q8_0, the IQ series (IQ2_XXS/S/XS, IQ3_XXS/S, IQ4_NL/XS) and Prism <code>pq2_0</code> ternary. <strong>EXL3</strong> — exllamav3's trellis format, read directly from a Hugging Face checkpoint directory. <code>Model::load</code> sniffs the format; both share the same kernels, KV cache and offload path.</p>
+        <div class="tags">
+          <span class="tag g">GGUF</span><span class="tag p">EXL3</span><span class="tag">IQ-series</span><span class="tag">PQ2_0</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ico" aria-hidden="true">🧠</div>
+        <h3>Model families</h3>
+        <p>Qwen2.5, Qwen3.6 and Qwen3.8 — dense <code>qwen35</code> and mixture-of-experts <code>qwen35moe</code> — plus Ornith, Gemma 4 and Prism Ternary-Bonsai.</p>
+        <div class="tags">
+          <span class="tag">Qwen</span><span class="tag">Ornith</span><span class="tag">Gemma 4</span><span class="tag p">Prism</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ico" aria-hidden="true">🎮</div>
+        <h3>Turing and newer</h3>
+        <p>Turing, Ampere and Ada run native SASS; newer parts run through forward-compatible PTX JIT. sm_75 is the floor. The reference box is an RTX 2080 Ti with 11 GB — the MoE path streams experts through a layer arena, so the 34.4 GB Ornith-1.5-35B-A3B checkpoint runs on it.</p>
+        <div class="tags">
+          <span class="tag g">sm_75</span><span class="tag">sm_86</span><span class="tag">sm_89</span><span class="tag">PTX JIT</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ico" aria-hidden="true">🖥️</div>
+        <h3>A CPU path that actually ships</h3>
+        <p>Runtime SIMD dispatch picks AMX, AVX-512, AVX2 or a scalar fallback, with OpenMP across cores. Without CUDA it still runs — several times to orders of magnitude slower, and a model that does not fit in RAM will not run at all.</p>
+        <div class="tags">
+          <span class="tag">AMX</span><span class="tag">AVX-512</span><span class="tag">AVX2</span><span class="tag g">OpenMP</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <div class="pipe-step"><span class="dot g"></span><b>Load</b>GGUF or EXL3 — format sniffed by Model::load</div>
+      <div class="pipe-step"><span class="dot b"></span><b>Prefill</b>cuBLAS fp16 GEMM, or in-tree int8 stream-K MMA</div>
+      <div class="pipe-step"><span class="dot p"></span><b>Decode</b>on-the-fly dequant GEMV · int8 KV pool</div>
+      <div class="pipe-step"><span class="dot o"></span><b>Attention</b>warp flash attention + gated-delta-net recurrence</div>
+      <div class="pipe-step"><span class="dot g"></span><b>Sample</b>top-k / top-p / temperature / repetition penalty</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ EXL3 ============ -->
+<section id="exl3">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">New · EXL3</div>
+      <h2>A second first-class format — and a measured win on it</h2>
+      <p>EXL3 is exllamav3's trellis-quantised checkpoint format. TinyCoder loads it natively, alongside GGUF, and is faster than the reference implementation on it.</p>
+    </div>
+
+    <div class="exl3-layout">
+      <div class="exl3-copy">
+        <h3>What EXL3 is</h3>
+        <p>EXL3 stores weights as a trellis code over 16×16 (k,n) tiles in a Hugging Face safetensors directory — <code>config.json</code>, <code>*.safetensors</code>, <code>tokenizer.json</code> — rather than in a GGUF file. At <code>1.60bpw</code>, a 27B checkpoint is 8.6 GB.</p>
+
+        <h3>Why native support matters</h3>
+        <p>Before this, an EXL3 checkpoint meant running exllamav3: PyTorch, a JIT-compiled CUDA extension, Python per token. Now the same engine runs both formats — one loader, one KV cache, one offload path, and no conversion pass.</p>
+
+        <ul class="checks">
+          <li><code>Model::load</code> detects the format and selects <code>EXL3Loader</code> automatically.</li>
+          <li>Trellis reconstruction, the EXL3 GEMV and the fused prefill GEMM live in <code>src/cpp/core/cuda/exl3/</code>.</li>
+          <li>The autotuned cublasLt path is the default; <code>TINYCODER_EXL3_LT=0</code> pins the older fixed-order k summation bit-for-bit.</li>
+          <li>Checkpoint shape and tokenizer are read from the directory — no GGUF conversion step.</li>
+        </ul>
+      </div>
+
+      <div class="win-panel">
+        <div class="win-kicker">Measured · RTX 2080 Ti</div>
+        <div class="win-numbers">
+          <div class="win-stat"><span class="num">723.0</span><span class="unit">tok/s pp512</span></div>
+          <div class="win-stat"><span class="num">23.26</span><span class="unit">tok/s tg128</span></div>
+        </div>
+        <p class="win-vs">against <strong>exllamav3 1.6.6</strong> at 707.5 tok/s pp512 and 22.9 tok/s tg128 — same checkpoint, <code>Qwen3.8-27B EXL3 1.60bpw</code>, 8.6 GB.</p>
+        <p class="win-note">Ahead in both columns, but the decode margin is narrow: exllamav3's tg128 includes Python per-token overhead, so its figure is a floor rather than a best case. Both columns were measured with the same pp512/tg128 protocol.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ API ============ -->
+<section id="api">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">API</div>
+      <h2>Run it as a local OpenAI-compatible provider</h2>
+      <p>The engine tree ships a library, not a server: <code>tinycoder_core</code>, its headers, tests and benchmarks. The OpenAI-compatible endpoint is the <strong>TinyCoder OpenAI</strong> gateway — a Go HTTP server that links the engine — so existing OpenAI-style tooling has something to point at.</p>
+    </div>
+
+    <div class="split">
+      <div>
+        <h3>Embed the library</h3>
+        <p>Pull <code>tinycoder_core</code> into your own CMake project, then load and generate through the C++ API.</p>
+        <div class="code">
+          <div class="code-head"><span>cmake</span><span>FetchContent</span></div>
+<pre><code>FetchContent_Declare(tinycoder_inference
+    GIT_REPOSITORY https://github.com/mgorshkov/tinycoder-inference
+    GIT_TAG &lt;tag or commit&gt;)
+FetchContent_MakeAvailable(tinycoder_inference)
+target_link_libraries(your_target PRIVATE tinycoder_core)</code></pre>
+        </div>
+        <div class="code">
+          <div class="code-head"><span>C++</span><span>load + generate</span></div>
+<pre><code>#include "Model.hpp"
+using namespace tinycoder;
+
+Model model;
+std::string err;
+if (!model.load("/path/to/model.gguf", &amp;err)) {
+    <span class="c">// handle error</span>
+}
+
+InferenceParams params;
+params.maxTokens   = 512;
+params.temperature = 0.7f;
+params.topP        = 0.9f;
+
+model.generate("Write a C++ function to add two numbers.",
+    params, [](int32_t tokenId, const std::string &amp;text) {
+        std::cout &lt;&lt; text &lt;&lt; std::flush;
+        return true;
+    });</code></pre>
+        </div>
+      </div>
+
+      <div>
+        <h3>Serve the API</h3>
+        <p>Build the gateway with its native engine, then point it at a models directory.</p>
+        <div class="code">
+          <div class="code-head"><span>shell</span><span>tinycoder-openai</span></div>
+<pre><code>./scripts/build.sh
+./build/bin/tinycoder-openai \
+    --listen :8080 \
+    --models-dir /data/models</code></pre>
+        </div>
+        <div class="code">
+          <div class="code-head"><span>shell</span><span>localhost:8080</span></div>
+<pre><code>curl -s http://localhost:8080/v1/models
+
+curl -s http://localhost:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3.6-35b-a3b",
+       "messages":[{"role":"user",
+                    "content":"Write a C++ hello world."}]}'</code></pre>
+        </div>
+        <p class="table-note">Model ids come from the gateway's config registry — a GGUF file or an EXL3 checkpoint directory per entry — or from a scan of <code>--models-dir</code>.</p>
+      </div>
+    </div>
+
+    <div class="cta-row api-cta">
+      <a class="btn btn-ghost" href="https://github.com/mgorshkov/tinycoder-openai" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.68.8.56A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+        Gateway source: tinycoder-openai
+      </a>
+    </div>
+
+    <h3 class="sub-h">Endpoints the gateway actually serves</h3>
+    <div class="table-scroll">
+      <table class="bench endpoint">
+        <caption>Only these paths are served — there are no unversioned or legacy aliases.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Method</th>
+            <th scope="col">Path</th>
+            <th scope="col">What it does</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="method">GET</td><th class="path" scope="row"><code>/v1/models</code></th><td class="desc">List registry models, with tinycoder metadata</td></tr>
+          <tr><td class="method">POST</td><th class="path" scope="row"><code>/v1/chat/completions</code></th><td class="desc">Chat completion; SSE streaming; tool calling</td></tr>
+          <tr><td class="method">POST</td><th class="path" scope="row"><code>/v1/completions</code></th><td class="desc">Text completion; SSE streaming</td></tr>
+          <tr><td class="method">POST</td><th class="path" scope="row"><code>/v1/responses</code></th><td class="desc">OpenAI Responses API</td></tr>
+          <tr><td class="method">POST</td><th class="path" scope="row"><code>/v1/messages</code></th><td class="desc">Anthropic Messages API</td></tr>
+          <tr><td class="method">POST</td><th class="path" scope="row"><code>/v1/generate</code></th><td class="desc">Native endpoint; accepts <code>prompt</code> or <code>messages</code></td></tr>
+          <tr><td class="method">GET</td><th class="path" scope="row"><code>/openai.json</code>, <code>/openai.yaml</code></th><td class="desc">OpenAPI 3.1 document</td></tr>
+          <tr><td class="method">GET</td><th class="path" scope="row"><code>/healthz</code></th><td class="desc">Liveness probe</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="split api-lists">
+      <div class="card">
+        <h3>What it supports</h3>
+        <ul class="checks">
+          <li>SSE streaming on the completion endpoints, a final <code>data: [DONE]</code>, and keep-alive comments while a model loads or a long prompt prefills.</li>
+          <li>Tool calling on <code>/v1/chat/completions</code>: OpenAI <code>tools</code>, <code>tool_choice</code> and <code>tool_calls</code>, including streamed deltas.</li>
+          <li>Chat templates rendered inside the engine from the model's own template — send <code>messages</code>, not a pre-formatted prompt.</li>
+          <li>One model registry for both formats: each entry points at a GGUF file or an EXL3 checkpoint directory, and the engine auto-detects which.</li>
+          <li>Lazy loading with LRU idle eviction, optional bearer-token auth, CORS, request timeouts and a global concurrency cap.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>What it is not</h3>
+        <ul class="checks no">
+          <li>Not full OpenAI parity. Those paths are the whole surface, and there are no unversioned or legacy aliases.</li>
+          <li>The engine owns a single KV cache, so requests for the same model are serialized and queued rather than served concurrently.</li>
+          <li>Tool calling is elicited through a text protocol, not constrained decoding: best effort, and only on <code>/v1/chat/completions</code>.</li>
+          <li><code>/v1/responses</code> and <code>/v1/messages</code> accept and ignore fields they do not model (<code>store</code>, <code>previous_response_id</code>, <code>tools</code>, <code>metadata</code>); <code>max_tokens</code> is required on <code>/v1/messages</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BENCHMARKS ============ -->
+<section id="benchmarks">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">Benchmarks · a selection</div>
+      <h2>Where TinyCoder is faster</h2>
+      <p>A selection, not a survey: these are the four configurations where TinyCoder beats the baseline in <strong>both</strong> pp512 and tg128. The complete table — including the rows where llama.cpp is faster — is linked below.</p>
+    </div>
+
+    <div class="table-scroll">
+      <table class="bench">
+        <caption>pp512 is prefill, tg128 is decode, values in tok/s. Bold marks the faster engine in each column. Warm mean-of-reps, RTX 2080 Ti.</caption>
+        <thead>
+          <tr>
+            <th scope="col" rowspan="2">Model</th>
+            <th scope="colgroup" colspan="2">pp512 (tok/s)</th>
+            <th scope="colgroup" colspan="2">tg128 (tok/s)</th>
+          </tr>
+          <tr>
+            <th scope="col">TinyCoder</th>
+            <th scope="col">Baseline</th>
+            <th scope="col">TinyCoder</th>
+            <th scope="col">Baseline</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Qwen2.5-Coder-1.5B <code>q2_k</code>
+              <span class="model-sub">0.7 GB · full offload · vs llama.cpp</span>
+            </th>
+            <td class="win">10,149.8</td>
+            <td class="base">7,769.8</td>
+            <td class="win">327.91</td>
+            <td class="base">323.19</td>
+          </tr>
+          <tr>
+            <th scope="row">Qwen2.5-Coder-1.5B <code>iq3_xxs</code>
+              <span class="model-sub">0.9 GB · full offload · vs llama.cpp</span>
+            </th>
+            <td class="win">10,192.3</td>
+            <td class="base">10,143.5</td>
+            <td class="win">276.77</td>
+            <td class="base">261.47</td>
+          </tr>
+          <tr>
+            <th scope="row">Ornith-1.5-35B-A3B <code>q8_0</code> → <code>q4_k</code> experts
+              <span class="model-sub">34.4 GB · hybrid, layer arena · vs llama.cpp <code>-ncmoe 99</code></span>
+            </th>
+            <td class="win">176.3</td>
+            <td class="base">130.7</td>
+            <td class="win">53.67</td>
+            <td class="base">16.42</td>
+          </tr>
+          <tr>
+            <th scope="row">Qwen3.8-27B EXL3 <code>1.60bpw</code>
+              <span class="model-sub">8.6 GB · full offload · vs exllamav3 1.6.6</span>
+            </th>
+            <td class="win">723.0</td>
+            <td class="base">707.5</td>
+            <td class="win">23.26</td>
+            <td class="base">22.9</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="table-note">TinyCoder: <code>tinycoder_bench --n-prompts 512 --n-gen 128 --threads 36</code>. Baselines: <code>llama-bench -p 512 -n 128 -t 36 -r 1</code>, interleaved with the TinyCoder run — three alternating pairs, means reported — and exllamav3 1.6.6 measured with the same pp512/tg128 protocol. The 35B row adds <code>-ncmoe 99</code>. A TinyCoder figure is printed only if that checkpoint passes the text gate (<code>./scripts/text_gate.sh</code>).</p>
+    <p class="table-note">The complete table — every configuration, including the rows where llama.cpp is faster and the one with no comparable baseline — lives in <a href="https://github.com/mgorshkov/tinycoder-inference/blob/1.0.0/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">BENCHMARKS.md in the engine repository</a>, under the same protocol.</p>
+
+    <div class="format-card">
+      <div>
+        <div class="kicker">Format breadth</div>
+        <h3>Formats the other engines can't run</h3>
+        <p>Prism's <strong>Ternary-Bonsai-2-27B</strong> <code>pq2_0</code> checkpoint — a 6.7 GB ternary model — runs fully offloaded on the same 11 GB card.</p>
+        <p class="muted">There is no llama.cpp baseline for it, and the full table marks it with a dash: llama.cpp has no loader for the <code>pq2_0</code> ternary format, so there is no comparable run to publish. We are not going to invent one.</p>
+      </div>
+      <div class="format-stats">
+        <div class="fs"><span class="num">16.7</span><span class="unit">tok/s pp512</span></div>
+        <div class="fs"><span class="num">15.24</span><span class="unit">tok/s tg128</span></div>
+        <div class="fs"><span class="num">6.7 GB</span><span class="unit">checkpoint</span></div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>EXL3 is not in this category.</strong> It is also a format llama.cpp does not load, but it does have a baseline — exllamav3 1.6.6 — and TinyCoder is faster on it: 723.0 / 23.26 against 707.5 / 22.9. That is a measured win, kept separate from an unmeasured capability.
+    </div>
+
+    <div class="measure">
+      <h3 class="sub-h measure-h">How we measure</h3>
+      <div class="measure-grid">
+        <div class="measure-item">
+          <h3>Interleaved, not sequential</h3>
+          <p>Each TinyCoder run alternates with its baseline run — three pairs — so clock drift lands on both columns equally. Means are reported.</p>
+        </div>
+        <div class="measure-item">
+          <h3>Text before speed</h3>
+          <p>A throughput number is only printed if the checkpoint passes the text gate. A skipped test counts as a failure, so a row cannot pass by omission.</p>
+        </div>
+        <div class="measure-item">
+          <h3>One process at a time</h3>
+          <p>Benchmarks run serially on the reference RTX 2080 Ti. Two processes on that GPU contend for bandwidth and describe neither run.</p>
+        </div>
+        <div class="measure-item">
+          <h3>Implausible is a bug</h3>
+          <p>Before publication, implied TFLOPS and GB/s are checked against the card's peaks. A number above the hardware is skipped work, not a win.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ VS CODE ============ -->
+<section id="vscode">
+  <div class="wrap">
+    <div class="split ext">
+      <div>
+        <div class="kicker">Downstream integration</div>
+        <h2>The VS Code extension is one consumer</h2>
+        <p>The TinyCoder extension embeds <code>tinycoder_core</code> through its own N-API bridge — the engine's <code>FetchContent</code> path exists for exactly this. It adds a chat panel and editor commands on top, and it is how many people meet the engine day to day.</p>
+        <p>It is not the pitch. The library is the product; the extension is a downstream integration that proves the embedding path works.</p>
+        <a class="btn btn-ghost" href="https://github.com/mgorshkov/tinycoder" target="_blank" rel="noopener noreferrer">
+          TinyCoder extension
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+      <div class="embed-card">
+        <div class="ec-head">How it embeds</div>
+        <ol class="steps">
+          <li><b>FetchContent</b> pulls the engine and links <code>tinycoder_core</code>.</li>
+          <li>The extension adds an <b>N-API bridge</b> over the C++ <code>Model</code>.</li>
+          <li><b>VS Code</b> renders chat and commands over that bridge.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section>
+  <div class="wrap">
+    <div class="cta-panel">
+      <h2>Run it on the GPU you already own</h2>
+      <p>MIT-licensed C++20/CUDA. Clone the engine, build with CUDA, point <code>TINYCODER_MODEL_PATH</code> at a GGUF file or an EXL3 checkpoint directory.</p>
+      <div class="cta-row">
+        <a class="gh-big" href="https://github.com/mgorshkov/tinycoder-inference" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.68.8.56A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+          github.com/mgorshkov/tinycoder-inference
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/mgorshkov/tinycoder-inference/blob/1.0.0/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">
+          Read the full benchmark table
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-logo">
+      <img src="media/icon.svg" alt="" width="26" height="26">
+      <span>Tiny<b>Coder</b></span>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/mgorshkov/tinycoder-inference" target="_blank" rel="noopener noreferrer">Engine</a>
+      <a href="https://github.com/mgorshkov/tinycoder-openai" target="_blank" rel="noopener noreferrer">OpenAI provider</a>
+      <a href="https://github.com/mgorshkov/tinycoder" target="_blank" rel="noopener noreferrer">VS Code extension</a>
+      <a href="https://github.com/mgorshkov/tinycoder-inference/blob/1.0.0/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">Benchmarks</a>
+      <a href="LICENSE">MIT License</a>
+    </div>
+    <p>© 2026 TinyCoder AI · MIT License · every benchmark figure on this page comes from the tinycoder-inference repository.</p>
+    <p>Static HTML. No trackers, no external requests — this page works offline.</p>
+  </div>
+</footer>
+
+</body>
+</html>
