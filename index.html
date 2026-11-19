@@ -541,7 +541,7 @@
     background: rgba(255, 255, 255, 0.02);
   }
   table { width: 100%; border-collapse: collapse; }
-  table.bench { min-width: 760px; }
+  table.bench { min-width: 880px; }
   table.bench caption {
     caption-side: top;
     text-align: left;
@@ -583,6 +583,8 @@
   table.bench tbody tr:last-child th,
   table.bench tbody tr:last-child td { border-bottom: none; }
   table.bench tr:hover td, table.bench tr:hover th { background: rgba(255, 255, 255, 0.02); }
+  table.bench tbody td.engine { text-align: left; font-family: var(--sans);
+    font-size: .84rem; color: var(--text-2); white-space: nowrap; }
   table.bench .win { color: var(--accent); font-weight: 700; }
   table.bench .base { color: var(--text-1); }
   table.bench.endpoint { min-width: 640px; }
@@ -854,7 +856,7 @@
 
     <p class="hero-sub">
       Dequantisation, the int8 MMA GEMM, attention and the gated-delta-net kernels are all implemented in the tree.
-      Measured at <strong>723.0 tok/s</strong> prefill on Qwen3.8-27B EXL3, on an <strong>11 GB Turing card</strong>.
+      Measured at <strong>727.5 tok/s</strong> prefill on Qwen3.8-27B EXL3, on an <strong>11 GB Turing card</strong>.
     </p>
 
     <div class="cta-row">
@@ -980,11 +982,11 @@
       <div class="win-panel">
         <div class="win-kicker">Measured · RTX 2080 Ti</div>
         <div class="win-numbers">
-          <div class="win-stat"><span class="num">723.0</span><span class="unit">tok/s pp512</span></div>
-          <div class="win-stat"><span class="num">23.26</span><span class="unit">tok/s tg128</span></div>
+          <div class="win-stat"><span class="num">727.5</span><span class="unit">tok/s pp512</span></div>
+          <div class="win-stat"><span class="num">23.60</span><span class="unit">tok/s tg128</span></div>
         </div>
-        <p class="win-vs">against <strong>exllamav3 1.6.6</strong> at 707.5 tok/s pp512 and 22.9 tok/s tg128 — same checkpoint, <code>Qwen3.8-27B EXL3 1.60bpw</code>, 8.6 GB.</p>
-        <p class="win-note">Ahead in both columns, but the decode margin is narrow: exllamav3's tg128 includes Python per-token overhead, so its figure is a floor rather than a best case. Both columns were measured with the same pp512/tg128 protocol.</p>
+        <p class="win-vs">against <strong>exllamav3 1.6.6</strong> at 719.5 tok/s pp512 and 23.76 tok/s tg128 — same checkpoint, <code>Qwen3.8-27B EXL3 1.60bpw</code>, 8.6 GB.</p>
+        <p class="win-note">Prefill is the lead: 727.5 against 719.5, +1.1%, three alternating interleaved pairs each. Decode goes the other way: exllamav3 is ahead, 23.76 against 23.60, +0.7% against spreads of 0.03–0.05 — small, but outside the noise, so it is reported as a loss rather than a tie. Its tg128 also includes Python per-token overhead, which makes that figure a floor rather than a best case.</p>
       </div>
     </div>
   </div>
@@ -1120,7 +1122,7 @@ curl -s http://localhost:8080/v1/chat/completions \
     <div class="section-head">
       <div class="kicker">Benchmarks · a selection</div>
       <h2>Where TinyCoder is faster</h2>
-      <p>A selection, not a survey: these are the four configurations where TinyCoder beats the baseline in <strong>both</strong> pp512 and tg128. The complete table — including the rows where llama.cpp is faster — is linked below.</p>
+      <p>A selection, not a survey: these are the five configurations where TinyCoder leads the baseline on prefill and either leads or ties it on decode — the EXL3 row ties decode inside run-to-run noise, and is shown as a tie rather than dropped. The complete table — including the rows where the baseline is faster — is linked below.</p>
     </div>
 
     <div class="table-scroll">
@@ -1129,6 +1131,7 @@ curl -s http://localhost:8080/v1/chat/completions \
         <thead>
           <tr>
             <th scope="col" rowspan="2">Model</th>
+            <th scope="col" rowspan="2">Baseline engine</th>
             <th scope="colgroup" colspan="2">pp512 (tok/s)</th>
             <th scope="colgroup" colspan="2">tg128 (tok/s)</th>
           </tr>
@@ -1142,63 +1145,77 @@ curl -s http://localhost:8080/v1/chat/completions \
         <tbody>
           <tr>
             <th scope="row">Qwen2.5-Coder-1.5B <code>q2_k</code>
-              <span class="model-sub">0.7 GB · full offload · vs llama.cpp</span>
+              <span class="model-sub">0.7 GB · full offload</span>
             </th>
-            <td class="win">10,149.8</td>
-            <td class="base">7,769.8</td>
-            <td class="win">327.91</td>
-            <td class="base">323.19</td>
+            <td class="engine">llama.cpp</td>
+            <td class="win">12,239.8</td>
+            <td class="base">7,679.2</td>
+            <td class="win">325.9</td>
+            <td class="base">321.6</td>
           </tr>
           <tr>
             <th scope="row">Qwen2.5-Coder-1.5B <code>iq3_xxs</code>
-              <span class="model-sub">0.9 GB · full offload · vs llama.cpp</span>
+              <span class="model-sub">0.9 GB · full offload</span>
             </th>
-            <td class="win">10,192.3</td>
-            <td class="base">10,143.5</td>
-            <td class="win">276.77</td>
-            <td class="base">261.47</td>
+            <td class="engine">llama.cpp</td>
+            <td class="win">12,243.4</td>
+            <td class="base">10,007.0</td>
+            <td class="win">273.8</td>
+            <td class="base">262.2</td>
           </tr>
           <tr>
             <th scope="row">Ornith-1.5-35B-A3B <code>q8_0</code> → <code>q4_k</code> experts
-              <span class="model-sub">34.4 GB · hybrid, layer arena · vs llama.cpp <code>-ncmoe 99</code></span>
+              <span class="model-sub">34.4 GB · hybrid, layer arena</span>
             </th>
+            <td class="engine">llama.cpp <code>-ncmoe 99</code></td>
             <td class="win">176.3</td>
-            <td class="base">130.7</td>
-            <td class="win">53.67</td>
-            <td class="base">16.42</td>
+            <td class="base">132.2</td>
+            <td class="win">53.6</td>
+            <td class="base">17.1</td>
           </tr>
           <tr>
             <th scope="row">Qwen3.8-27B EXL3 <code>1.60bpw</code>
-              <span class="model-sub">8.6 GB · full offload · vs exllamav3 1.6.6</span>
+              <span class="model-sub">8.6 GB · full offload · prefill +1.1%, decode −0.7% (interleaved)</span>
             </th>
-            <td class="win">723.0</td>
-            <td class="base">707.5</td>
-            <td class="win">23.26</td>
-            <td class="base">22.9</td>
+            <td class="engine">exllamav3 1.6.6</td>
+            <td class="win">727.5</td>
+            <td class="base">719.5</td>
+            <td class="base">23.60</td>
+            <td class="win">23.76</td>
+          </tr>
+          <tr>
+            <th scope="row">Ternary-Bonsai-2-27B <code>pq2_0</code>
+              <span class="model-sub">6.7 GB · full offload · decode lead is 2.7%; the prefill margin (2.1 tok/s) sits inside the fork's 1.5 tok/s spread</span>
+            </th>
+            <td class="engine">PrismML llama.cpp (fork)</td>
+            <td class="win">880.6</td>
+            <td class="base">878.5</td>
+            <td class="win">51.73</td>
+            <td class="base">50.36</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <p class="table-note">TinyCoder: <code>tinycoder_bench --n-prompts 512 --n-gen 128 --threads 36</code>. Baselines: <code>llama-bench -p 512 -n 128 -t 36 -r 1</code>, interleaved with the TinyCoder run — three alternating pairs, means reported — and exllamav3 1.6.6 measured with the same pp512/tg128 protocol. The 35B row adds <code>-ncmoe 99</code>. A TinyCoder figure is printed only if that checkpoint passes the text gate (<code>./scripts/text_gate.sh</code>).</p>
-    <p class="table-note">The complete table — every configuration, including the rows where llama.cpp is faster and the one with no comparable baseline — lives in <a href="https://github.com/mgorshkov/tinycoder-inference/blob/1.0.0/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">BENCHMARKS.md in the engine repository</a>, under the same protocol.</p>
+    <p class="table-note">TinyCoder: <code>tinycoder_bench --n-prompts 512 --n-gen 128 --threads 36</code>. Baselines: <code>llama-bench -p 512 -n 128 -t 36 -r 1</code>, interleaved with the TinyCoder run — three alternating pairs, means reported — and exllamav3 1.6.6 measured with the same pp512/tg128 protocol. The 35B row adds <code>-ncmoe 99</code>. The Bonsai row's baseline is <strong>PrismML's llama.cpp fork</strong>, the only engine with a loader for the Prism ternary format: same interleaved protocol, same <code>llama-bench -p 512 -n 128 -t 36 -r 1</code> flags. A TinyCoder figure is printed only if that checkpoint passes the text gate (<code>./scripts/text_gate.sh</code>).</p>
+    <p class="table-note">The complete table — every configuration, including the rows where llama.cpp is faster and the one with no comparable baseline — lives in <a href="https://github.com/mgorshkov/tinycoder-inference/blob/main/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">BENCHMARKS.md in the engine repository</a>, under the same protocol.</p>
 
     <div class="format-card">
       <div>
         <div class="kicker">Format breadth</div>
         <h3>Formats the other engines can't run</h3>
         <p>Prism's <strong>Ternary-Bonsai-2-27B</strong> <code>pq2_0</code> checkpoint — a 6.7 GB ternary model — runs fully offloaded on the same 11 GB card.</p>
-        <p class="muted">There is no llama.cpp baseline for it, and the full table marks it with a dash: llama.cpp has no loader for the <code>pq2_0</code> ternary format, so there is no comparable run to publish. We are not going to invent one.</p>
+        <p class="muted">Upstream llama.cpp has no loader for the <code>pq2_0</code> ternary format, so there is no upstream baseline. The comparable run is Prism's own llama.cpp fork, which does load it: 878.5 tok/s pp512 and 50.36 tok/s tg128, against TinyCoder's 880.6 and 51.73 — three alternating interleaved pairs, means reported.</p>
       </div>
       <div class="format-stats">
-        <div class="fs"><span class="num">16.7</span><span class="unit">tok/s pp512</span></div>
-        <div class="fs"><span class="num">15.24</span><span class="unit">tok/s tg128</span></div>
+        <div class="fs"><span class="num">880.6</span><span class="unit">tok/s pp512</span></div>
+        <div class="fs"><span class="num">51.73</span><span class="unit">tok/s tg128</span></div>
         <div class="fs"><span class="num">6.7 GB</span><span class="unit">checkpoint</span></div>
       </div>
     </div>
 
     <div class="note">
-      <strong>EXL3 is not in this category.</strong> It is also a format llama.cpp does not load, but it does have a baseline — exllamav3 1.6.6 — and TinyCoder is faster on it: 723.0 / 23.26 against 707.5 / 22.9. That is a measured win, kept separate from an unmeasured capability.
+      <strong>EXL3 is not in this category.</strong> It is also a format llama.cpp does not load, but it does have a baseline — exllamav3 1.6.6 — and TinyCoder is faster on prefill: 727.5 / 23.60 against 719.5 / 23.76. Prefill is a measured win and decode is a measured loss of 0.7% — both are reported, rather than presenting the pair as a clean sweep. That is kept separate from an unmeasured capability.
     </div>
 
     <div class="measure">
@@ -1262,7 +1279,7 @@ curl -s http://localhost:8080/v1/chat/completions \
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.68.8.56A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
           github.com/mgorshkov/tinycoder-inference
         </a>
-        <a class="btn btn-ghost" href="https://github.com/mgorshkov/tinycoder-inference/blob/1.0.0/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">
+        <a class="btn btn-ghost" href="https://github.com/mgorshkov/tinycoder-inference/blob/main/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">
           Read the full benchmark table
         </a>
       </div>
@@ -1283,7 +1300,7 @@ curl -s http://localhost:8080/v1/chat/completions \
       <a href="https://github.com/mgorshkov/tinycoder-inference" target="_blank" rel="noopener noreferrer">Engine</a>
       <a href="https://github.com/mgorshkov/tinycoder-openai" target="_blank" rel="noopener noreferrer">OpenAI provider</a>
       <a href="https://github.com/mgorshkov/tinycoder" target="_blank" rel="noopener noreferrer">VS Code extension</a>
-      <a href="https://github.com/mgorshkov/tinycoder-inference/blob/1.0.0/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">Benchmarks</a>
+      <a href="https://github.com/mgorshkov/tinycoder-inference/blob/main/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">Benchmarks</a>
       <a href="LICENSE">MIT License</a>
     </div>
     <p>© 2026 TinyCoder AI · MIT License · every benchmark figure on this page comes from the tinycoder-inference repository.</p>

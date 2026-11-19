@@ -48,8 +48,16 @@ site advertises.
 Link, don't embed: no badges, no remote images, no scripts that fetch at view time. Every URL above was
 checked with `curl -sI` and returns `200`.
 
-The "complete table" links point at the engine's `1.0.0` branch rather than `main`, because `BENCHMARKS.md`
-is not yet on the repository's default branch. When it is, update those links to the default branch.
+The "complete table" links point at the engine's default branch (`main`). The `1.0.0` branch that
+previously carried `BENCHMARKS.md` has been merged into `main` and removed, so all links must use
+`main`. Verify with:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  https://raw.githubusercontent.com/mgorshkov/tinycoder-inference/main/BENCHMARKS.md
+```
+
+A `200` means the link target exists; a `404` means the branch or path changed again.
 
 ## Updating the benchmark numbers
 
@@ -82,14 +90,21 @@ table becomes misleading — do not remove it.
 
 ### Formats without a baseline
 
-`Ternary-Bonsai-2-27B pq2_0` has no llama.cpp baseline: llama.cpp has no loader for the Prism ternary
-format, so `BENCHMARKS.md` prints dashes. It therefore must **not** go in the wins table — a row of dashes in
-a "where we are faster" table would be a fake comparison. It gets the separate "Formats the other engines
-can't run" block, presented as format breadth, not as a speed claim, with one sentence saying plainly that
-no baseline exists.
+`Ternary-Bonsai-2-27B pq2_0` has no *upstream* llama.cpp baseline: llama.cpp has no loader for the Prism
+ternary format. Prism's own llama.cpp fork does load it, and `BENCHMARKS.md` publishes that run (three
+alternating interleaved pairs, means reported): 878.5 tok/s pp512 and 50.36 tok/s tg128 against TinyCoder's
+880.6 and 51.73. So the row is a real comparison, but the baseline is a fork rather than upstream llama.cpp
+and must be labelled as one wherever it is shown — the wins table therefore carries a **Baseline engine**
+column, so every row names the engine it is measured against instead of saying it once in a caption.
+
+The row does belong in the wins table: TinyCoder leads decode by 2.7% (51.73 against 50.36) and prefill by
+2.1 tok/s, and that prefill margin is inside the fork's 1.5 tok/s spread, which the row's sub-line says
+plainly rather than hiding behind a bold number. The "Formats the other engines can't run" block keeps the
+format-breadth argument, with the fork numbers cited instead of dashes.
 
 The same block must keep the EXL3 distinction: EXL3 is also a format llama.cpp does not load, but it *does*
-have a baseline (exllamav3 1.6.6) and TinyCoder beats it. A measured win must not be lumped in with an
+have a baseline (exllamav3 1.6.6). TinyCoder leads it on prefill (+1.1%) and trails on decode (-0.7%, both
+measured interleaved, `scripts/exl3_ab_bench.sh`); state both directions, not the favourable half. A measured win must not be lumped in with an
 unmeasured capability.
 
 ## Copy rules
