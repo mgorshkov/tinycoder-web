@@ -33,12 +33,12 @@ Do not delete or rename anything in `media/`; the page references those exact fi
 ## Repository map
 
 Every outbound link on the page points at one of the three product repositories below — including the deep
-links to `BENCHMARKS.md` inside the engine repository — plus the local `LICENSE` file. The page never links
-to its own repository: a site does not need to cite itself, and the footer points outward only.
+links to the per-card benchmark files inside the engine repository — plus the local `LICENSE` file. The page
+never links to its own repository: a site does not need to cite itself, and the footer points outward only.
 
 | Repo | URL | Role on the page |
 |---|---|---|
-| `tinycoder-inference` | <https://github.com/mgorshkov/tinycoder-inference> | Hero primary CTA; engine links in "What it is" and EXL3; the full benchmark table. |
+| `tinycoder-inference` | <https://github.com/mgorshkov/tinycoder-inference> | Hero primary CTA; engine links in "What it is" and EXL3; the full per-card benchmark tables. |
 | `tinycoder-openai` | <https://github.com/mgorshkov/tinycoder-openai> | The OpenAI-compatible gateway: the API section's link and the endpoint table's source of truth. |
 | `tinycoder` | <https://github.com/mgorshkov/tinycoder> | The VS Code extension — a downstream consumer, deliberately secondary. |
 
@@ -48,50 +48,62 @@ site advertises.
 Link, don't embed: no badges, no remote images, no scripts that fetch at view time. Every URL above was
 checked with `curl -sI` and returns `200`.
 
-The "complete table" links point at the engine's default branch (`main`). The `1.0.0` branch that
-previously carried `BENCHMARKS.md` has been merged into `main` and removed, so all links must use
-`main`. Verify with:
+The "complete table" links point at the engine's default branch (`main`). The engine's benchmark tables are
+now split per card: `benchmarks/BENCHMARKS-2080TI.md` is the published table on this page, and
+`benchmarks/BENCHMARKS-3090.md` is the Ampere file (it currently publishes no rows). The old root-level
+`BENCHMARKS.md` was split and removed, so links to it return `404`; do not reintroduce them. Verify both
+targets with:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" \
-  https://raw.githubusercontent.com/mgorshkov/tinycoder-inference/main/BENCHMARKS.md
+  https://raw.githubusercontent.com/mgorshkov/tinycoder-inference/main/benchmarks/BENCHMARKS-2080TI.md
+
+curl -s -o /dev/null -w "%{http_code}\n" \
+  https://raw.githubusercontent.com/mgorshkov/tinycoder-inference/main/benchmarks/BENCHMARKS-3090.md
 ```
 
 A `200` means the link target exists; a `404` means the branch or path changed again.
 
 ## Updating the benchmark numbers
 
-**The single source of truth is `tinycoder-inference/BENCHMARKS.md`.** Never edit a benchmark number in
-`index.html` by hand, and never retype one from memory or from a chat transcript.
+**The single source of truth is the per-card file
+`tinycoder-inference/benchmarks/BENCHMARKS-2080TI.md`** for the table on this page. Never edit a benchmark
+number in `index.html` by hand, and never retype one from memory or from a chat transcript.
 
-1. Read the current table in `tinycoder-inference/BENCHMARKS.md`.
+1. Read the current table in `tinycoder-inference/benchmarks/BENCHMARKS-2080TI.md`.
 2. Copy the figures **verbatim** — same digits, same decimal places, same thousands separators. `15.24` is
    not `15.2`; `10,149.8` is not `10150`.
-3. Keep the selection rule below, and keep the protocol line in sync with `BENCHMARKS.md`.
-4. Check that every figure on the page still appears verbatim in `BENCHMARKS.md`.
+3. Keep the selection rule below, and keep the protocol line in sync with the per-card file.
+4. Check that every figure on the page still appears verbatim in the per-card file.
+
+The `benchmarks/BENCHMARKS-3090.md` file is **not** a source for the page while it publishes no rows. Its
+§1.1 numbers are *reported* from a rented stand, not reproduced in the repository, and the file says they
+must not be quoted as published. The page may link the file and say it publishes no rows; it must not show
+any of its figures.
 
 ### Selection rule
 
 The benchmark table on the page is titled **"Where TinyCoder is faster"** and is explicitly a *selection*,
-not the full survey. A row is included only if TinyCoder is faster in **both** columns (pp512 and tg128).
-As of the current `BENCHMARKS.md`, that yields exactly four rows:
+not the full survey. A row is included only if TinyCoder is ahead in **both** columns (pp512 and tg128).
+As of the current `BENCHMARKS-2080TI.md`, that yields exactly five rows:
 
 | Row | Why it qualifies |
 |---|---|
-| Qwen2.5-Coder-1.5B `q2_k` | faster in both columns |
-| Qwen2.5-Coder-1.5B `iq3_xxs` | faster in both columns |
-| Ornith-1.5-35B-A3B | faster in both columns |
-| Qwen3.8-27B EXL3 `1.60bpw` | faster in both columns |
+| Qwen2.5-Coder-1.5B `q2_k` | ahead in both columns |
+| Qwen2.5-Coder-1.5B `iq3_xxs` | ahead in both columns |
+| Ornith-1.5-35B-A3B | ahead in both columns |
+| Qwen3.8-27B EXL3 `1.60bpw` | ahead in both columns (prefill +1.3%, decode +26.0%) |
+| Ternary-Bonsai-2-27B `pq2_0` | ahead in both columns; the prefill margin is inside the fork's spread |
 
 Rows where the engine loses a column are deliberately excluded (`Qwen2.5-Coder-7B iq2_s` wins prefill only;
-`Qwen2.5-Coder-7B iq3_xxs` and `Ornith-1.5-9B` lose both). That is allowed *only* because the page says it is
-a selection and links the complete table directly under it. If that pointer is ever removed, the filtered
-table becomes misleading — do not remove it.
+`Qwen2.5-Coder-7B iq3_xxs`, `Ornith-1.5-9B` and Ternary-Bonsai `ptq1_0` lose decode or both). That is
+allowed *only* because the page says it is a selection and links the complete table directly under it. If
+that pointer is ever removed, the filtered table becomes misleading — do not remove it.
 
 ### Formats without a baseline
 
 `Ternary-Bonsai-2-27B pq2_0` has no *upstream* llama.cpp baseline: llama.cpp has no loader for the Prism
-ternary format. Prism's own llama.cpp fork does load it, and `BENCHMARKS.md` publishes that run (three
+ternary format. Prism's own llama.cpp fork does load it, and `BENCHMARKS-2080TI.md` publishes that run (three
 alternating interleaved pairs, means reported): 878.5 tok/s pp512 and 50.36 tok/s tg128 against TinyCoder's
 880.6 and 51.73. So the row is a real comparison, but the baseline is a fork rather than upstream llama.cpp
 and must be labelled as one wherever it is shown — the wins table therefore carries a **Baseline engine**
@@ -103,22 +115,23 @@ plainly rather than hiding behind a bold number. The "Formats the other engines 
 format-breadth argument, with the fork numbers cited instead of dashes.
 
 The same block must keep the EXL3 distinction: EXL3 is also a format llama.cpp does not load, but it *does*
-have a baseline (exllamav3 1.6.6). TinyCoder leads it on prefill (+1.1%) and trails on decode (-0.7%, both
-measured interleaved, `scripts/exl3_ab_bench.sh`); state both directions, not the favourable half. A measured win must not be lumped in with an
-unmeasured capability.
+have a baseline (exllamav3 1.6.6). TinyCoder leads it on both columns — prefill +1.3% (725.8 against 716.8)
+and decode +26.0% (29.83 against 23.67), both measured interleaved with `scripts/exl3_ab_bench.sh`. State
+the between-session spread (`30.77 / 23.63` on a repeat session, about 3%) alongside the lead, and do not
+lump a measured win in with an unmeasured capability.
 
 ## Copy rules
 
-- **No claim of a win the benchmark table does not show.** If `BENCHMARKS.md` does not have the row, the page
+- **No claim of a win the benchmark table does not show.** If the 2080 Ti file does not have the row, the page
   does not have the claim. This applies to speed, memory, tokens-per-second and "runs on X" statements.
 - **No invented API surface.** The engine repository ships a library (`tinycoder_core`), not an HTTP server.
   The OpenAI-compatible endpoints documented on the page are the ones implemented in the separate
   `tinycoder-openai` gateway — verify against that source before changing the endpoint table or the
   "what it is not" list.
 - **No unverified model names, flags, versions or hardware claims.** Take them from the engine's README,
-  `BENCHMARKS.md` and source, not from memory.
-- Keep the honest notes: the exllamav3 decode-margin caveat, the text-gate rule, and the fact that llama.cpp
-  wins configurations in the full table.
+  the per-card benchmark files and source, not from memory.
+- Keep the honest notes: the EXL3 between-session-spread caveat, the Bonsai prefill-within-spread caveat,
+  the text-gate rule, and the fact that llama.cpp wins configurations in the full table.
 
 ## Constraints
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="dark">
 <title>TinyCoder — a from-scratch inference engine for GGUF and EXL3</title>
-<meta name="description" content="TinyCoder is a from-scratch C++20/CUDA inference engine for NVIDIA GPUs. Native GGUF and EXL3 (trellis) checkpoints, its own int8 MMA GEMM, attention and gated-delta-net kernels, and an OpenAI-compatible provider through the TinyCoder OpenAI gateway. MIT licensed.">
+<meta name="description" content="TinyCoder is a from-scratch C++20/CUDA inference engine for NVIDIA GPUs — Turing, Ampere and Ada. Native GGUF and EXL3 (trellis) checkpoints, its own int8 MMA GEMM, attention and gated-delta-net kernels, memory-planned context windows, and an OpenAI-compatible provider through the TinyCoder OpenAI gateway. MIT licensed.">
 <link rel="icon" href="media/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="media/icon.png">
 <style>
@@ -856,7 +856,7 @@
 
     <p class="hero-sub">
       Dequantisation, the int8 MMA GEMM, attention and the gated-delta-net kernels are all implemented in the tree.
-      Measured at <strong>727.5 tok/s</strong> prefill on Qwen3.8-27B EXL3, on an <strong>11 GB Turing card</strong>.
+      Measured at <strong>725.8 tok/s</strong> prefill and <strong>29.83 tok/s</strong> decode on Qwen3.8-27B EXL3, on an <strong>11 GB Turing card</strong>.
     </p>
 
     <div class="cta-row">
@@ -928,7 +928,7 @@
       <div class="card">
         <div class="ico" aria-hidden="true">🎮</div>
         <h3>Turing and newer</h3>
-        <p>Turing, Ampere and Ada run native SASS; newer parts run through forward-compatible PTX JIT. sm_75 is the floor. The reference box is an RTX 2080 Ti with 11 GB — the MoE path streams experts through a layer arena, so the 34.4 GB Ornith-1.5-35B-A3B checkpoint runs on it.</p>
+        <p>Turing and Ampere run native SASS (<code>sm_75</code> / <code>sm_86</code>); Ada and newer run <code>sm_86</code> SASS or forward-compatible PTX JIT. <code>sm_75</code> is the floor. The reference box is an RTX 2080 Ti with 11 GB — the MoE path streams experts through a layer arena, so the 34.4 GB Ornith-1.5-35B-A3B checkpoint runs on it.</p>
         <div class="tags">
           <span class="tag g">sm_75</span><span class="tag">sm_86</span><span class="tag">sm_89</span><span class="tag">PTX JIT</span>
         </div>
@@ -937,10 +937,24 @@
       <div class="card">
         <div class="ico" aria-hidden="true">🖥️</div>
         <h3>A CPU path that actually ships</h3>
-        <p>Runtime SIMD dispatch picks AMX, AVX-512, AVX2 or a scalar fallback, with OpenMP across cores. Without CUDA it still runs — several times to orders of magnitude slower, and a model that does not fit in RAM will not run at all.</p>
+        <p>Runtime SIMD dispatch picks AMX, AVX-512, AVX2 or a scalar fallback, with OpenMP across cores. Each loaded model gets its own CPU thread pool, so a small model can run beside a large one without borrowing its workers. Without CUDA it still runs — several times to orders of magnitude slower, and a model that does not fit in RAM will not run at all.</p>
         <div class="tags">
           <span class="tag">AMX</span><span class="tag">AVX-512</span><span class="tag">AVX2</span><span class="tag g">OpenMP</span>
         </div>
+      </div>
+    </div>
+
+    <div class="format-card">
+      <div>
+        <div class="kicker">New · context · 11 GB card</div>
+        <h3>Context windows sized by memory</h3>
+        <p>The window is planned, not fixed: <code>--ctx N</code> or <code>model.setContextLength(N)</code> asks for N tokens, and the planner grants the largest window that fits the measured free VRAM/RAM after the weights and the session's scratch, switching to an int8 K/V store when that is what makes it fit.</p>
+        <p class="muted">The default stays 2048. A window below 1024 tokens refuses the load rather than silently truncating, and the grant is a capacity, not an accuracy claim beyond the checkpoint's trained length.</p>
+      </div>
+      <div class="format-stats">
+        <div class="fs"><span class="num">196,352</span><span class="unit">tokens · Ornith-1.5-9B q4_k_m</span></div>
+        <div class="fs"><span class="num">64,256</span><span class="unit">tokens · Ternary-Bonsai-2-27B</span></div>
+        <div class="fs"><span class="num">12,288</span><span class="unit">tokens · Qwen3.8-27B EXL3</span></div>
       </div>
     </div>
 
@@ -959,8 +973,8 @@
   <div class="wrap">
     <div class="section-head">
       <div class="kicker">New · EXL3</div>
-      <h2>A second first-class format — and a measured win on it</h2>
-      <p>EXL3 is exllamav3's trellis-quantised checkpoint format. TinyCoder loads it natively, alongside GGUF, and is faster than the reference implementation on it.</p>
+      <h2>A second first-class format — and a measured win in both columns</h2>
+      <p>EXL3 is exllamav3's trellis-quantised checkpoint format. TinyCoder loads it natively, alongside GGUF, and is faster than the reference implementation on both prefill and decode.</p>
     </div>
 
     <div class="exl3-layout">
@@ -982,11 +996,11 @@
       <div class="win-panel">
         <div class="win-kicker">Measured · RTX 2080 Ti</div>
         <div class="win-numbers">
-          <div class="win-stat"><span class="num">727.5</span><span class="unit">tok/s pp512</span></div>
-          <div class="win-stat"><span class="num">23.60</span><span class="unit">tok/s tg128</span></div>
+          <div class="win-stat"><span class="num">725.8</span><span class="unit">tok/s pp512</span></div>
+          <div class="win-stat"><span class="num">29.83</span><span class="unit">tok/s tg128</span></div>
         </div>
-        <p class="win-vs">against <strong>exllamav3 1.6.6</strong> at 719.5 tok/s pp512 and 23.76 tok/s tg128 — same checkpoint, <code>Qwen3.8-27B EXL3 1.60bpw</code>, 8.6 GB.</p>
-        <p class="win-note">Prefill is the lead: 727.5 against 719.5, +1.1%, three alternating interleaved pairs each. Decode goes the other way: exllamav3 is ahead, 23.76 against 23.60, +0.7% against spreads of 0.03–0.05 — small, but outside the noise, so it is reported as a loss rather than a tie. Its tg128 also includes Python per-token overhead, which makes that figure a floor rather than a best case.</p>
+        <p class="win-vs">against <strong>exllamav3 1.6.6</strong> at 716.8 tok/s pp512 and 23.67 tok/s tg128 — same checkpoint, <code>Qwen3.8-27B EXL3 1.60bpw</code>, 8.6 GB.</p>
+        <p class="win-note">TinyCoder leads both columns: prefill 725.8 against 716.8 (+1.3%, spreads 1.2 and 1.6), and decode 29.83 against 23.67 (+26.0%, spreads 0.06 and 0.07), three alternating interleaved pairs each. The decode margin is the <code>mul1</code> dp4a fold in <code>exl3GemvV3</code>. A repeat session measured 30.77 / 23.63, so the between-session spread on this row is about 3% — larger than the within-session spread, but far below the decode lead. exllamav3's tg128 also includes Python per-token overhead, which makes that figure a floor rather than a best case.</p>
       </div>
     </div>
   </div>
@@ -1048,6 +1062,12 @@ model.generate("Write a C++ function to add two numbers.",
     --models-dir /data/models</code></pre>
         </div>
         <div class="code">
+          <div class="code-head"><span>shell</span><span>one model, no registry</span></div>
+<pre><code>./build/bin/tinycoder-openai \
+    --model /data/models/qwen2.5-coder-1.5b-instruct-q2_k.gguf \
+    --model-id qwen2.5-coder-1.5b --ctx 4096</code></pre>
+        </div>
+        <div class="code">
           <div class="code-head"><span>shell</span><span>localhost:8080</span></div>
 <pre><code>curl -s http://localhost:8080/v1/models
 
@@ -1057,7 +1077,7 @@ curl -s http://localhost:8080/v1/chat/completions \
        "messages":[{"role":"user",
                     "content":"Write a C++ hello world."}]}'</code></pre>
         </div>
-        <p class="table-note">Model ids come from the gateway's config registry — a GGUF file or an EXL3 checkpoint directory per entry — or from a scan of <code>--models-dir</code>.</p>
+        <p class="table-note">Model ids come from the gateway's config registry: each entry points at a GGUF file or an EXL3 checkpoint directory. The registry is authoritative — files on disk that are not listed are never served. <code>--model</code>, <code>--model-id</code> and <code>--ctx</code> serve exactly one model without a registry, and <code>--ctx 0</code> inherits <code>max_seq_len</code>.</p>
       </div>
     </div>
 
@@ -1088,9 +1108,12 @@ curl -s http://localhost:8080/v1/chat/completions \
           <tr><td class="method">POST</td><th class="path" scope="row"><code>/v1/generate</code></th><td class="desc">Native endpoint; accepts <code>prompt</code> or <code>messages</code></td></tr>
           <tr><td class="method">GET</td><th class="path" scope="row"><code>/openai.json</code>, <code>/openai.yaml</code></th><td class="desc">OpenAPI 3.1 document</td></tr>
           <tr><td class="method">GET</td><th class="path" scope="row"><code>/healthz</code></th><td class="desc">Liveness probe</td></tr>
+          <tr><td class="method">GET</td><th class="path" scope="row"><code>/readyz</code></th><td class="desc">Readiness probe; reports model warm-up</td></tr>
         </tbody>
       </table>
     </div>
+
+    <p class="table-note">A prompt longer than the model's context window is refused with HTTP <code>400</code> and the OpenAI error code <code>context_length_exceeded</code> — Anthropic-shaped on <code>/v1/messages</code>, and as an SSE error event when a stream is already open. It is not silently truncated.</p>
 
     <div class="split api-lists">
       <div class="card">
@@ -1101,13 +1124,14 @@ curl -s http://localhost:8080/v1/chat/completions \
           <li>Chat templates rendered inside the engine from the model's own template — send <code>messages</code>, not a pre-formatted prompt.</li>
           <li>One model registry for both formats: each entry points at a GGUF file or an EXL3 checkpoint directory, and the engine auto-detects which.</li>
           <li>Lazy loading with LRU idle eviction, optional bearer-token auth, CORS, request timeouts and a global concurrency cap.</li>
+          <li><code>/healthz</code> is liveness and <code>/readyz</code> is readiness; optional <code>preload</code> / <code>preload_models</code> warms models at startup so an orchestrator holds traffic until they are warm.</li>
         </ul>
       </div>
       <div class="card">
         <h3>What it is not</h3>
         <ul class="checks no">
           <li>Not full OpenAI parity. Those paths are the whole surface, and there are no unversioned or legacy aliases.</li>
-          <li>The engine owns a single KV cache, so requests for the same model are serialized and queued rather than served concurrently.</li>
+          <li>Generation is serialized: the engine owns a single KV cache and one GPU, so requests queue rather than run concurrently. <code>max_concurrent_requests</code> bounds the queue, not the parallelism.</li>
           <li>Tool calling is elicited through a text protocol, not constrained decoding: best effort, and only on <code>/v1/chat/completions</code>.</li>
           <li><code>/v1/responses</code> and <code>/v1/messages</code> accept and ignore fields they do not model (<code>store</code>, <code>previous_response_id</code>, <code>tools</code>, <code>metadata</code>); <code>max_tokens</code> is required on <code>/v1/messages</code>.</li>
         </ul>
@@ -1122,7 +1146,7 @@ curl -s http://localhost:8080/v1/chat/completions \
     <div class="section-head">
       <div class="kicker">Benchmarks · a selection</div>
       <h2>Where TinyCoder is faster</h2>
-      <p>A selection, not a survey: these are the five configurations where TinyCoder leads the baseline on prefill and either leads or ties it on decode — the EXL3 row ties decode inside run-to-run noise, and is shown as a tie rather than dropped. The complete table — including the rows where the baseline is faster — is linked below.</p>
+      <p>A selection, not a survey: these are the five configurations where TinyCoder is ahead in both columns. The complete table — including the rows where the baseline wins a column — is linked below.</p>
     </div>
 
     <div class="table-scroll">
@@ -1165,23 +1189,23 @@ curl -s http://localhost:8080/v1/chat/completions \
           </tr>
           <tr>
             <th scope="row">Ornith-1.5-35B-A3B <code>q8_0</code> → <code>q4_k</code> experts
-              <span class="model-sub">34.4 GB · hybrid, layer arena</span>
+              <span class="model-sub">34.4 GB · hybrid only (experts in RAM) · layer arena</span>
             </th>
             <td class="engine">llama.cpp <code>-ncmoe 99</code></td>
-            <td class="win">176.3</td>
+            <td class="win">133.4</td>
             <td class="base">132.2</td>
-            <td class="win">53.6</td>
+            <td class="win">24.10</td>
             <td class="base">17.1</td>
           </tr>
           <tr>
             <th scope="row">Qwen3.8-27B EXL3 <code>1.60bpw</code>
-              <span class="model-sub">8.6 GB · full offload · prefill +1.1%, decode −0.7% (interleaved)</span>
+              <span class="model-sub">8.6 GB · full offload · prefill +1.3%, decode +26.0% (interleaved)</span>
             </th>
             <td class="engine">exllamav3 1.6.6</td>
-            <td class="win">727.5</td>
-            <td class="base">719.5</td>
-            <td class="base">23.60</td>
-            <td class="win">23.76</td>
+            <td class="win">725.8</td>
+            <td class="base">716.8</td>
+            <td class="win">29.83</td>
+            <td class="base">23.67</td>
           </tr>
           <tr>
             <th scope="row">Ternary-Bonsai-2-27B <code>pq2_0</code>
@@ -1198,7 +1222,8 @@ curl -s http://localhost:8080/v1/chat/completions \
     </div>
 
     <p class="table-note">TinyCoder: <code>tinycoder_bench --n-prompts 512 --n-gen 128 --threads 36</code>. Baselines: <code>llama-bench -p 512 -n 128 -t 36 -r 1</code>, interleaved with the TinyCoder run — three alternating pairs, means reported — and exllamav3 1.6.6 measured with the same pp512/tg128 protocol. The 35B row adds <code>-ncmoe 99</code>. The Bonsai row's baseline is <strong>PrismML's llama.cpp fork</strong>, the only engine with a loader for the Prism ternary format: same interleaved protocol, same <code>llama-bench -p 512 -n 128 -t 36 -r 1</code> flags. A TinyCoder figure is printed only if that checkpoint passes the text gate (<code>./scripts/text_gate.sh</code>).</p>
-    <p class="table-note">The complete table — every configuration, including the rows where llama.cpp is faster and the one with no comparable baseline — lives in <a href="https://github.com/mgorshkov/tinycoder-inference/blob/main/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">BENCHMARKS.md in the engine repository</a>, under the same protocol.</p>
+    <p class="table-note">The complete table — every configuration, including the rows where llama.cpp is faster and the one with no upstream baseline — lives in <a href="https://github.com/mgorshkov/tinycoder-inference/blob/main/benchmarks/BENCHMARKS-2080TI.md" target="_blank" rel="noopener noreferrer">BENCHMARKS-2080TI.md in the engine repository</a>, under the same protocol.</p>
+    <p class="table-note">The engine also keeps a separate <a href="https://github.com/mgorshkov/tinycoder-inference/blob/main/benchmarks/BENCHMARKS-3090.md" target="_blank" rel="noopener noreferrer">RTX 3090 (sm_86) file</a>. It publishes no rows yet: its only Ampere figures are reported from a rented session and are not reproduced in the repository, so none are quoted here.</p>
 
     <div class="format-card">
       <div>
@@ -1215,7 +1240,7 @@ curl -s http://localhost:8080/v1/chat/completions \
     </div>
 
     <div class="note">
-      <strong>EXL3 is not in this category.</strong> It is also a format llama.cpp does not load, but it does have a baseline — exllamav3 1.6.6 — and TinyCoder is faster on prefill: 727.5 / 23.60 against 719.5 / 23.76. Prefill is a measured win and decode is a measured loss of 0.7% — both are reported, rather than presenting the pair as a clean sweep. That is kept separate from an unmeasured capability.
+      <strong>EXL3 is not in this category.</strong> It is also a format llama.cpp does not load, but it does have a baseline — exllamav3 1.6.6 — and TinyCoder leads it on both columns: 725.8 / 29.83 against 716.8 / 23.67. Prefill is +1.3% and decode +26.0%, measured over interleaved pairs; the between-session spread on this row is about 3%, so the decode lead is far outside it. That is kept separate from an unmeasured capability.
     </div>
 
     <div class="measure">
@@ -1224,6 +1249,10 @@ curl -s http://localhost:8080/v1/chat/completions \
         <div class="measure-item">
           <h3>Interleaved, not sequential</h3>
           <p>Each TinyCoder run alternates with its baseline run — three pairs — so clock drift lands on both columns equally. Means are reported.</p>
+        </div>
+        <div class="measure-item">
+          <h3>Per card, same session</h3>
+          <p>Each GPU gets its own table and its own baseline measured on that card in the same session. Numbers are never carried between cards; the 3090 file therefore publishes none until its receipt is reproduced.</p>
         </div>
         <div class="measure-item">
           <h3>Text before speed</h3>
@@ -1279,7 +1308,7 @@ curl -s http://localhost:8080/v1/chat/completions \
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.68.8.56A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
           github.com/mgorshkov/tinycoder-inference
         </a>
-        <a class="btn btn-ghost" href="https://github.com/mgorshkov/tinycoder-inference/blob/main/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">
+        <a class="btn btn-ghost" href="https://github.com/mgorshkov/tinycoder-inference/blob/main/benchmarks/BENCHMARKS-2080TI.md" target="_blank" rel="noopener noreferrer">
           Read the full benchmark table
         </a>
       </div>
@@ -1300,7 +1329,7 @@ curl -s http://localhost:8080/v1/chat/completions \
       <a href="https://github.com/mgorshkov/tinycoder-inference" target="_blank" rel="noopener noreferrer">Engine</a>
       <a href="https://github.com/mgorshkov/tinycoder-openai" target="_blank" rel="noopener noreferrer">OpenAI provider</a>
       <a href="https://github.com/mgorshkov/tinycoder" target="_blank" rel="noopener noreferrer">VS Code extension</a>
-      <a href="https://github.com/mgorshkov/tinycoder-inference/blob/main/BENCHMARKS.md" target="_blank" rel="noopener noreferrer">Benchmarks</a>
+      <a href="https://github.com/mgorshkov/tinycoder-inference/blob/main/benchmarks/BENCHMARKS-2080TI.md" target="_blank" rel="noopener noreferrer">Benchmarks</a>
       <a href="LICENSE">MIT License</a>
     </div>
     <p>© 2026 TinyCoder AI · MIT License · every benchmark figure on this page comes from the tinycoder-inference repository.</p>
